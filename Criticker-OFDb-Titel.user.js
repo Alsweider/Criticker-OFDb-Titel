@@ -8,6 +8,7 @@
 // @icon         https://www.criticker.com/favicon.ico
 // @grant        GM_xmlhttpRequest
 // @connect      www.ofdb.de
+// @license      MIT
 // ==/UserScript==
 
 (function() {
