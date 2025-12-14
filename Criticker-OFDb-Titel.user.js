@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Criticker-OFDb-Titel
 // @namespace    https://criticker.com/
-// @version      2025-12-13
+// @version      2025-12-14
 // @description  Ruft deutsche Filmtitel von ofdb.de ab und zeigt sie auf Criticker als Untertitel an.
 // @author       Alsweider
 // @match        https://www.criticker.com/film/*
+// @match        https://www.criticker.com/tv/*
 // @icon         https://www.criticker.com/favicon.ico
 // @grant        GM_xmlhttpRequest
 // @connect      www.ofdb.de
-// @license      MIT
 // ==/UserScript==
 
 (function() {
