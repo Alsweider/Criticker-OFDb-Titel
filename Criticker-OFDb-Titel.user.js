@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Criticker-OFDb-Titel
 // @namespace    https://criticker.com/
-// @version      2026-05-11
+// @version      2026-05-12
 // @description  Ruft deutsche Filmtitel von ofdb.de ab und zeigt sie auf Criticker als Untertitel an.
 // @author       Alsweider
 // @match        https://www.criticker.com/film/*
@@ -20,10 +20,11 @@
 (function () {
     'use strict';
 
-    const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 Tage
-    const TIMEOUT_MS   = 180000;
-    const OFDB_BASE    = 'https://www.ofdb.de';
-    const ELEM_ID      = 'ofdb-local-title';
+    const CACHE_TTL_MS   = 30 * 24 * 60 * 60 * 1000; // 30 Tage
+    const TIMEOUT_DIRECT = 10000;   // Direktabruf: kurz – bei Ausbleiben sofort Fallback
+    const TIMEOUT_SEARCH = 60000;   // Suchfallback: mehr Zeit, da letzte Stufe
+    const OFDB_BASE      = 'https://www.ofdb.de';
+    const ELEM_ID        = 'ofdb-local-title';
 
     // --- IMDb-ID ermitteln ---
     const imdbLink = document.querySelector('.tip_sidebar_action a[href*="imdb.com/title/"]');
@@ -53,16 +54,19 @@
             return;
         }
 
-        // Direktversuch: OFDb-Seite per IMDb-ID
+        // Stufe 1: Direktabruf per IMDb-ID (schnell, kurzer Timeout)
         const directURL = `${OFDB_BASE}/film/imdb/${imdbID}`;
 
         GM_xmlhttpRequest({
             method:  'GET',
             url:     directURL,
-            timeout: TIMEOUT_MS,
+            timeout: TIMEOUT_DIRECT,
             onload: function (response) {
-                if (response.status === 200 && response.finalUrl &&
-                    response.finalUrl.includes('/film/')) {
+                // Erfolg nur wenn OFDb auf eine konkrete Filmseite weitergeleitet hat
+                if (response.status === 200 &&
+                    response.finalUrl &&
+                    response.finalUrl !== directURL &&
+                    /\/film\/\d+/.test(response.finalUrl)) {
                     const title = extractTitle(response.responseText);
                     if (title) {
                         GM_setValue(cacheKey, { title, url: response.finalUrl, ts: Date.now() });
@@ -70,6 +74,7 @@
                         return;
                     }
                 }
+                // Stufe 2: Fallback auf Suche (langsamerer, bewährter Weg)
                 fetchViaSearch();
             },
             onerror:   function () { fetchViaSearch(); },
@@ -80,14 +85,14 @@
         });
     }
 
-    // --- Zweistufige Suche (Fallback) ---
+    // --- Zweistufige Suche (Fallback, langer Timeout) ---
     function fetchViaSearch() {
         const searchURL = `${OFDB_BASE}/suchergebnis/?${imdbID}`;
 
         GM_xmlhttpRequest({
             method:  'GET',
             url:     searchURL,
-            timeout: TIMEOUT_MS,
+            timeout: TIMEOUT_SEARCH,
             onload: function (response) {
                 const parser = new DOMParser();
                 const doc    = parser.parseFromString(response.responseText, 'text/html');
@@ -103,7 +108,7 @@
                 GM_xmlhttpRequest({
                     method:  'GET',
                     url:     filmURL,
-                    timeout: TIMEOUT_MS,
+                    timeout: TIMEOUT_SEARCH,
                     onload: function (resp) {
                         const title = extractTitle(resp.responseText);
                         if (title) {
@@ -161,13 +166,6 @@
         return btn;
     }
 
-    /**
-     * Setzt den visuellen Zustand des Platzhalters.
-     *
-     * 'loading'  → Ladehinweis, kein Button
-     * 'found'    → deutscher Titel als Link + Reload-Button
-     * 'notfound' → Hinweis + Reload-Button, blendet sich nach 4 s aus
-     */
     function setState(el, state, text, url) {
         el.innerHTML     = '';
         el.style.cssText = 'display:block; font-size:1.0em;';
@@ -180,10 +178,8 @@
                 el.style.color     = '#aaa';
                 el.style.fontStyle = 'italic';
                 el.textContent     = '↻ OFDb-Titel wird gesucht …';
-                // Kein Reload-Button während des Ladens
                 break;
             }
-
             case 'found': {
                 el.style.fontStyle = 'normal';
                 const link         = document.createElement('a');
@@ -195,13 +191,11 @@
                 el.appendChild(createReloadButton());
                 break;
             }
-
             case 'notfound': {
                 el.style.color     = '#bbb';
                 el.style.fontStyle = 'italic';
                 el.appendChild(document.createTextNode('(kein OFDb-Eintrag gefunden)'));
                 el.appendChild(createReloadButton());
-                // Nach 4 s gemeinsam mit Button ausblenden und entfernen
                 el._fadeTimeout = setTimeout(() => {
                     el.style.transition = 'opacity 1s';
                     el.style.opacity    = '0';
